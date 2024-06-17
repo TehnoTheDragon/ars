@@ -1,15 +1,9 @@
-use ars::{lexer::{Lexer, LexerExt}, token::{Token, TokenData, TokenExt}};
+use std::borrow::{Borrow, BorrowMut};
+
+use ars::{add_node, ast::{Node, Value}, node};
 
 fn main() {
-    let pattern = vec![
-        Token::new_regex_from_str("whitespace", 0, "\\s+"),
-        Token::new_regex_from_str("number", 4, "\\d+(\\.\\d+)?"),
-        Token::new_lit("let", 1, "let"),
-        Token::new_regex_from_str("iden", 2, "[a-zA-Z_][a-zA-Z0-9_]*"),
-        Token::new_lit("equal", 3, "="),
-    ];
-    for tok in "let x = 10.5".tokenize_all(&pattern).iter() {
-        if tok.kind == 0 { continue; }
-        println!("{tok}");
-    }
+    let mut root = node!(0, "root", Value::None);
+    add_node!(root, node!(1, "a", Value::None), node!(2, "b", Value::None));
+    println!("{:#?}", root);
 }
