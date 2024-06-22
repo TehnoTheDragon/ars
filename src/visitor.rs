@@ -1,8 +1,6 @@
-use std::{collections::HashMap, fmt::{format, Display}, ops::ShrAssign, rc::Rc, sync::Arc};
+use std::{borrow::BorrowMut, cell::{Ref, RefCell}, collections::HashMap, fmt::{format, Display}, ops::ShrAssign, rc::Rc, sync::{Arc, Mutex, RwLock}};
 
 use crate::ast::Node;
-
-pub type VisitorFn = Box<dyn Fn(&Visitor, &Node) -> VisitorResult>;
 
 #[derive(Debug, Clone)]
 pub enum VisitorResult {
@@ -82,45 +80,38 @@ impl Display for VisitorResult {
     }
 }
 
-pub struct Visitor {
-    pub visitors: HashMap<u32, VisitorFn>,
+pub type VisitorFn<T> = Box<dyn FnMut(&mut Visitor<T>, &Node) -> VisitorResult>;
+
+pub struct Visitor<T> {
+    pub visitors: RwLock<HashMap<u32, RefCell<VisitorFn<T>>>>,
+    pub scope: Arc<Mutex<T>>,
 }
 
-impl Visitor {
-    pub fn new(visitors: Option<Vec<(u32, VisitorFn)>>) -> Self {
-        let mut map = HashMap::new();
-        if let Some(visitors) = visitors {
-            for (kind, visitor) in visitors {
-                map.insert(kind, visitor);
-            }
-        }
+impl<T> Visitor<T> {
+    pub fn new(scope: T) -> Self {
         Self {
-            visitors: map,
+            visitors: RwLock::new(HashMap::new()),
+            scope: Arc::new(Mutex::new(scope)),
         }
     }
 
-    pub fn register(&mut self, kind: u32, visitor: VisitorFn) {
-        self.visitors.insert(kind, visitor);
+    pub fn register(&mut self, kind: u32, visitor: VisitorFn<T>) {
+        self.visitors.write().unwrap().insert(kind, RefCell::new(visitor));
     }
 
-    pub fn visit(&self, node: &Node) -> VisitorResult {
-        if let Some(visitor) = self.visitors.get(&node.kind) {
-            return visitor(self, node);
-        }
-        panic!("Unknown node kind({}): {}", node.kind, node.label);
+    pub fn visit(&mut self, node: &Node) -> VisitorResult {
+        let visitor = match self.visitors.read().unwrap().get(&node.kind) {
+            Some(visitor) => visitor.as_ptr() as *mut VisitorFn<T>,
+            None => panic!("Visitor for `{}({})` not found", node.label, node.kind),
+        };
+        let visitor = unsafe { &mut *visitor };
+        visitor(self, node)
     }
 
-    pub fn visit_child(&self, node: &Arc<Node>) -> VisitorResult {
-        if let Some(visitor) = self.visitors.get(&node.kind) {
-            return visitor(self, node);
-        }
-        panic!("Unknown node kind({}): {}", node.kind, node.label);
-    }
-
-    pub fn visit_children(&self, children: &Vec<Arc<Node>>) -> VisitorResult {
+    pub fn visit_children(&mut self, node: &Node) -> VisitorResult {
         let mut compound = VisitorResult::Compound(vec![]);
-        for child in children {
-            compound.add_child(self.visit_child(&child));
+        for child in node.children.iter() {
+            compound.add_child(self.visit(child));
         }
         compound
     }
