@@ -30,11 +30,12 @@ impl ParserState {
         return node;
     }
 
-    pub fn require(&self, kinds: Vec<u32>) {
+    pub fn require(&self, kinds: Vec<u32>) -> TokenData {
         let token = &self.tokens[self.index];
         if !kinds.contains(&token.kind) {
             panic!("Expected {:?} but found {:?}", kinds, token.kind);
         }
+        token.clone()
     }
 
     pub fn is_kind(&self, kind: u32) -> bool {
