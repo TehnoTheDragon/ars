@@ -1,3 +1,5 @@
+use std::vec;
+
 use ars::{ast::{Node, Value}, create_parser, lexer::Lexer, parser::ParserState, token::Token};
 
 fn read_file(path: &str) -> String {
@@ -19,8 +21,7 @@ create_parser!(Identity, 0, |_, state: &mut ParserState| {
         5 => { state.eat(); state.parse(Register) },
         7 => { state.eat(); state.parse(Constant) },
         _ => {
-            state.require(vec![2]);
-            let identity = state.eat();
+            let identity = state.require(vec![2]);
             let node = Node::new(0, "Ident", Value::String(identity.value));
             node
         },
@@ -28,12 +29,11 @@ create_parser!(Identity, 0, |_, state: &mut ParserState| {
 });
 
 create_parser!(Instruction, 0, |_, state: &mut ParserState| {
-    state.require(vec![1]);
-    let instruction = state.eat();
+    let instruction = state.require(vec![1]);
     let mut node = Node::new(0, "Instruction", Value::String(instruction.value));
     state.skip_until_found(vec![0]);
     node.add_child(state.parse(Identity));
-    while state.is_kind(4) {
+    while state.is_kind(vec![4]) {
         state.eat();
         node.add_child(state.parse(Identity));
     }
@@ -44,7 +44,16 @@ create_parser!(Label, 0, |_, state: &mut ParserState| {
     let identity = state.parse(Identity);
     state.require(vec![3]);
     state.eat();
-    Node::new(0, "Label", Value::String(identity.value.as_string()))
+    let mut label = Node::new(0, "Label", Value::String(identity.value.as_string()));
+    while state.is_kind(vec![1, 2]) {
+        match state.peek().kind {
+            1 => label.add_child(state.parse(Instruction)),
+            2 => label.add_child(state.parse(Label)),
+            _ => unreachable!(),
+        }
+        state.skip_until_found(vec![0]);
+    }
+    label
 });
 
 fn main() {
@@ -54,7 +63,7 @@ fn main() {
         Token::new_lit("comma", 4, ","),
         Token::new_lit("percent", 5, "%"),
         Token::new_lit("hashtag", 7, "#"),
-        Token::new_regex_from_str("instruction", 1, "imm|store"),
+        Token::new_regex_from_str("instruction", 1, "imm|store|load|add|sub|mul|div|mod|and|or|xor|shl|shr|not"),
         Token::new_regex_from_str("ident", 2, "[a-zA-Z_][a-zA-Z0-9_]*"),
         Token::new_regex_from_str("number", 6, "\\d+(\\.\\d+)?"),
     ]);
@@ -62,6 +71,4 @@ fn main() {
     let tokens = lexer.all();
     let mut parser = ParserState::new(tokens, Some(vec![0]));
     println!("{}", parser.parse(Label));
-    println!("{}", parser.parse(Instruction));
-    println!("{}", parser.parse(Instruction));
 }
