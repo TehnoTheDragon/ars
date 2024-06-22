@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::{ast::{Node, Value}, token::{TokenData}};
+use crate::{ast::Node, token::TokenData};
 
 pub trait Parser {
     fn parse(&self, state: &mut ParserState) -> Node;
@@ -30,19 +30,19 @@ impl ParserState {
         return node;
     }
 
-    pub fn require(&self, kinds: Vec<u32>) -> TokenData {
+    pub fn require(&mut self, kinds: Vec<u32>) -> TokenData {
         let token = &self.tokens[self.index];
         if !kinds.contains(&token.kind) {
             panic!("Expected {:?} but found {:?}", kinds, token.kind);
         }
-        token.clone()
+        self.eat()
     }
 
-    pub fn is_kind(&self, kind: u32) -> bool {
+    pub fn is_kind(&self, kinds: Vec<u32>) -> bool {
         if self.index >= self.tokens.len() {
             return false;
         }
-        self.peek().kind == kind
+        kinds.contains(&self.peek().kind)
     }
 
     pub fn peek(&self) -> TokenData {
