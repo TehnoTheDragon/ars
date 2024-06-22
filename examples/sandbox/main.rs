@@ -1,4 +1,4 @@
-use std::{rc::Rc, vec};
+use std::{borrow::Borrow, fmt::Write, io::Write as IoWrite, rc::Rc, sync::{Arc, Mutex, RwLock}, thread::Scope, vec};
 
 use ars::{ast::{Node, Value}, create_parser, lexer::Lexer, parser::ParserState, token::Token, visitor::{Visitor, VisitorResult}};
 
@@ -56,6 +56,10 @@ create_parser!(Label, 0, |_, state: &mut ParserState| {
     label
 });
 
+struct MyScope {
+    pub data: std::fs::File,
+}
+
 fn main() {
     let mut lexer = Lexer::new(vec![
         Token::new_regex_from_str("whitespace", 0, "\\s+"),
@@ -70,24 +74,43 @@ fn main() {
     lexer.begin(read_file("assets/tests/pseudo-assembly.pasm").as_str());
     let tokens = lexer.all();
     let mut parser = ParserState::new(tokens, Some(vec![0]));
-    let mut visitor = Visitor::new(None);
+    let mut my_scope = MyScope {
+        data: std::fs::File::create("assets/tests/pseudo-assembly.nasm").unwrap(),
+    };
+    let mut visitor = Visitor::new(&mut my_scope);
+    
     visitor.register(0, Box::new(|visitor, node| {
-        visitor.visit_children(&node.children)
-    }));
-    visitor.register(1, Box::new(|visitor, node| {
-        let mut compound = VisitorResult::Compound(vec![]);
-        for child in &node.children {
-            compound.add_child(visitor.visit_child(&child));
-        }
-        VisitorResult::Tagged("instruction".to_string(), Rc::new(compound))
-    }));
-    visitor.register(3, Box::new(|visitor, node| {
-        VisitorResult::Integer(node.value.as_string().parse::<u64>().unwrap())
-    }));
-    visitor.register(4, Box::new(|visitor, node| {
-        VisitorResult::Integer(node.value.as_string().parse::<u64>().unwrap())
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!(".{}:\n", node.value.as_string())).unwrap();
+        visitor.visit_children(node);
+        VisitorResult::None
     }));
 
-    let result = visitor.visit(&parser.parse(Label));
-    print!("{}", result);
+    visitor.register(1, Box::new(|visitor, node| {
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!("\t{} ", node.value.as_string())).unwrap();
+        for (i, child) in node.children.iter().enumerate() {
+            visitor.visit(child);
+            if i < node.children.len() - 1 {
+                visitor.scope.lock().unwrap().data.write_fmt(format_args!(", ")).unwrap();
+            }
+        }
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!("\n")).unwrap();
+        VisitorResult::None
+    }));
+
+    visitor.register(2, Box::new(|visitor, node| {
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!("[{}]", node.value.as_string())).unwrap();
+        VisitorResult::None
+    }));
+
+    visitor.register(3, Box::new(|visitor, node| {
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!("#{}", node.value.as_string())).unwrap();
+        VisitorResult::None
+    }));
+
+    visitor.register(4, Box::new(|visitor, node| {
+        visitor.scope.lock().unwrap().data.write_fmt(format_args!("r{}", node.value.as_string())).unwrap();
+        VisitorResult::None
+    }));
+
+    visitor.visit(&parser.parse(Label));
 }
